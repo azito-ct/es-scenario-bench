@@ -6,4 +6,4 @@ services:
     # https://www.mongodb.com/docs/manual/release-notes/
     image: mongo:6.0.4
     ports:
-     - "27017:27017"
+     - "28017:27017"

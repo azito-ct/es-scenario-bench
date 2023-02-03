@@ -5,6 +5,9 @@ import cats.effect.std.Random
 import cats.effect.IO
 
 import esbench.standaloneprice.NestedModelMapper
+
+import esbench.standaloneprice.JoinedIndexesModelMapper
+
 object StandalonePriceDomainRunConf:
   def nested(using Random[IO]) = DomainRunConfiguration(
     domainA = Product.random,
@@ -28,4 +31,10 @@ object StandalonePriceDomainRunConf:
     domainA = Product.random,
     queryA = ProductQuery.simple,
     mapper = JoinedIndexesModelMapper
+  )
+
+  def mongoJoinedIndexes(using Random[IO]) = DomainRunConfiguration(
+    domainA = Product.random,
+    queryA = ProductQuery.simple,
+    mapper = MongoJoinedIndexesModelMapper
   )
