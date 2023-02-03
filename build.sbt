@@ -13,3 +13,5 @@ libraryDependencies ++= Seq(
 
     "org.typelevel" %% "cats-effect" % "3.4.5"
 )
+
+libraryDependencies += "org.mongodb.scala" %% "mongo-scala-driver" % "4.8.2" cross(CrossVersion.for3Use2_13)

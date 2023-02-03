@@ -2,6 +2,7 @@ package esbench
 
 import io.circe.Json
 
+import esbench.ElasticsearchModel
 object DomainModelMapping:
   sealed trait ElasticQuery
   case class SingleElasticQuery(index: String, query: Json) extends ElasticQuery

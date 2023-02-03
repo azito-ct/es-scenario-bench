@@ -62,7 +62,7 @@ object Stats:
     )
 
 class RunExecutor(
-    esClient: ElasticsearchClient,
+    esClient: SearchBenchClient,
     parallelism: Int,
     maxBulkSize: Int
 ):

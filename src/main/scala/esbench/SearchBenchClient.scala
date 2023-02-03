@@ -14,6 +14,8 @@ import cats.implicits._
 import cats.effect.IO
 
 import scala.concurrent.duration._
+import esbench.ElasticsearchModel.ElasticDoc
+import esbench.ElasticsearchModel.SearchResponse
 
 object ElasticsearchModel:
   case class DeleteIndexResponse(acknowledged: Boolean)
@@ -46,7 +48,21 @@ object ElasticsearchModel:
   )
 end ElasticsearchModel
 
-class ElasticsearchClient(esUri: Uri)(using sttp: SttpBackend[IO, Any]):
+trait SearchBenchClient:
+  def createIndex(indexName: String, shards: Int, replicas: Int): IO[Unit]
+  def deleteIndex(indexName: String): IO[Unit]
+  def createMappings(indexName: String, mapping: Json): IO[Unit]
+  def indexDocumentsBulk(
+      docs: List[ElasticDoc],
+      maxBatchSize: Int = 1000
+  ): IO[Unit]
+  def waitForIndexCounts(expected: Map[String, Int]): IO[Unit]
+  def search(
+      indexName: String,
+      query: Json
+  ): IO[SearchResponse]
+
+class DefaultElasticsearchClient(esUri: Uri)(using sttp: SttpBackend[IO, Any]) extends SearchBenchClient:
   import ElasticsearchModel._
   private def retryWithBackoff[A](
       ioa: IO[A],
@@ -93,7 +109,7 @@ class ElasticsearchClient(esUri: Uri)(using sttp: SttpBackend[IO, Any]):
       )
     } yield result
 
-  def createIndex(indexName: String, shards: Int, replicas: Int): IO[Unit] =
+  override def createIndex(indexName: String, shards: Int, replicas: Int): IO[Unit] =
     val req = quickRequest
       .put(esUri.withPath(indexName))
       .body(
@@ -106,7 +122,7 @@ class ElasticsearchClient(esUri: Uri)(using sttp: SttpBackend[IO, Any]):
       )
     simpleRequest[CreateIndexResponse]("create index", req).void
 
-  def deleteIndex(indexName: String): IO[Unit] =
+  override def deleteIndex(indexName: String): IO[Unit] =
     val req = quickRequest.delete(esUri.withPath(indexName))
     simpleRequest[DeleteIndexResponse](
       "delete index",
@@ -117,7 +133,7 @@ class ElasticsearchClient(esUri: Uri)(using sttp: SttpBackend[IO, Any]):
       }
     ).void
 
-  def createMappings(indexName: String, mapping: Json): IO[Unit] =
+  override def createMappings(indexName: String, mapping: Json): IO[Unit] =
     val req = quickRequest
       .put(esUri.withPath(indexName, "_mappings"))
       .body(mapping)
@@ -137,7 +153,7 @@ class ElasticsearchClient(esUri: Uri)(using sttp: SttpBackend[IO, Any]):
 
     simpleRequest[IndexDocumentResponse]("index document", req).void
 
-  def indexDocumentsBulk(
+  override def indexDocumentsBulk(
       docs: List[ElasticDoc],
       maxBatchSize: Int = 1000
   ): IO[Unit] =
@@ -182,7 +198,7 @@ class ElasticsearchClient(esUri: Uri)(using sttp: SttpBackend[IO, Any]):
       .toList
       .sequence_
 
-  def waitForIndexCounts(expected: Map[String, Int]): IO[Unit] =
+  override def waitForIndexCounts(expected: Map[String, Int]): IO[Unit] =
     def go(indexName: String, expectedSize: Int): IO[Unit] =
       for {
         count <- simpleRequest[CountResponse](
@@ -199,7 +215,7 @@ class ElasticsearchClient(esUri: Uri)(using sttp: SttpBackend[IO, Any]):
       .sequence
       .void
 
-  def search(
+  override def search(
       indexName: String,
       query: Json
   ): IO[SearchResponse] =

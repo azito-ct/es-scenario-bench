@@ -1,0 +1,9 @@
+version: '3.1'
+
+services:
+  mongo:
+    container_name: mongo_es_bench
+    # https://www.mongodb.com/docs/manual/release-notes/
+    image: mongo:6.0.4
+    ports:
+     - "27017:27017"

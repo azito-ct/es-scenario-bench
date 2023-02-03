@@ -11,7 +11,7 @@ import cats.implicits._
 import esbench.standaloneprice.StandalonePriceDomainRunConf
 
 import esbench.DefaultElasticsearchClient
-object Main extends IOApp.Simple {
+object MongoMain extends IOApp.Simple {
 
   val esHostIO = IO.fromEither(
     Uri
@@ -91,3 +91,7 @@ object Main extends IOApp.Simple {
     _ <- IO.println("== Done")
   } yield ()
 }
+
+class MongoClient extends SearchBenchClient
+
+

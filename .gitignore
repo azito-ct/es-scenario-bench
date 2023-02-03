@@ -4,3 +4,4 @@ metals.sbt
 .bloop
 .bsp
 target/
+.idea
