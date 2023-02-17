@@ -38,3 +38,9 @@ object StandalonePriceDomainRunConf:
     queryA = ProductQuery.simple,
     mapper = MongoJoinedIndexesModelMapper
   )
+
+  def millisearchNested(using Random[IO]) = DomainRunConfiguration(
+    domainA = Product.random,
+    queryA = ProductQuery.simple,
+    mapper = MilliSearchNestedModelMapper
+  )

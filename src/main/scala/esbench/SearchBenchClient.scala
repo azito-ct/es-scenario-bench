@@ -62,7 +62,8 @@ trait SearchBenchClient:
       query: Json
   ): IO[SearchResponse]
 
-class DefaultElasticsearchClient(esUri: Uri)(using sttp: SttpBackend[IO, Any]) extends SearchBenchClient:
+class DefaultElasticsearchClient(esUri: Uri)(using sttp: SttpBackend[IO, Any])
+    extends SearchBenchClient:
   import ElasticsearchModel._
   private def retryWithBackoff[A](
       ioa: IO[A],
@@ -109,7 +110,11 @@ class DefaultElasticsearchClient(esUri: Uri)(using sttp: SttpBackend[IO, Any]) e
       )
     } yield result
 
-  override def createIndex(indexName: String, shards: Int, replicas: Int): IO[Unit] =
+  override def createIndex(
+      indexName: String,
+      shards: Int,
+      replicas: Int
+  ): IO[Unit] =
     val req = quickRequest
       .put(esUri.withPath(indexName))
       .body(
@@ -230,3 +235,138 @@ class DefaultElasticsearchClient(esUri: Uri)(using sttp: SttpBackend[IO, Any]) e
       "searching",
       req
     )
+
+class DefaultMillisearchClient(msUri: Uri)(using sttp: SttpBackend[IO, Any])
+    extends SearchBenchClient:
+  import ElasticsearchModel._
+
+  private def retryWithBackoff[A](
+      ioa: IO[A],
+      initialDelay: FiniteDuration,
+      maxRetries: Int
+  ): IO[A] =
+    ioa.handleErrorWith { error =>
+      if (maxRetries > 0)
+        IO.sleep(initialDelay) *> retryWithBackoff(
+          ioa,
+          initialDelay * 2,
+          maxRetries - 1
+        )
+      else
+        IO.raiseError(error)
+    }
+
+  private def validateRespDefault[Resp]
+      : PartialFunction[(StatusCode, Either[String, Resp]), Resp] =
+    case (code, Right(r: Resp)) if code.isSuccess => r
+
+  private def simpleRequest[Resp](
+      descr: String,
+      req: Request[_, Any],
+      validateF: PartialFunction[(StatusCode, Either[String, Resp]), Resp] =
+        validateRespDefault[Resp]
+  )(using Decoder[Resp]): IO[Resp] =
+    for {
+      resp <- retryWithBackoff(
+        sttp.send(req.response(asJson[Resp])).recoverWith { case err =>
+          IO.raiseError(
+            new IllegalArgumentException(s"Request error [${descr}]", err)
+          )
+        },
+        50.millis,
+        3
+      )
+      respBody = resp.body.leftMap(_.getMessage())
+      valid = validateF.lift(resp.code, respBody)
+      result <- IO.fromOption(valid)(
+        new IllegalArgumentException(
+          s"Response error [${descr}]: req=${req} code=${resp.code} resp=${respBody}"
+        )
+      )
+    } yield result
+
+  override def createMappings(indexName: String, mapping: Json): IO[Unit] =
+    val createIndexUrl = msUri.withPath("indexes")
+    val createIndexReq = quickRequest
+      .post(createIndexUrl)
+      .body(mapping.mapObject(_.remove("settings")))
+
+    val settingsIndexUrl = msUri.withPath("indexes", indexName, "settings")
+    val settingsIndexReq = quickRequest
+      .patch(settingsIndexUrl)
+      .body(mapping.mapObject(_.apply("settings").flatMap(_.asObject).getOrElse(JsonObject())))
+
+    for {
+      _ <- simpleRequest[Json]("create index", createIndexReq)
+      _ <- simpleRequest[Json]("settings", settingsIndexReq)
+    } yield ()
+
+  override def deleteIndex(indexName: String): IO[Unit] =
+    val reqUrl = msUri.withPath("indexes", indexName)
+    val req = quickRequest.delete(reqUrl)
+
+    simpleRequest[Json]("delete index", req).void
+
+  override def createIndex(
+      indexName: String,
+      shards: Int,
+      replicas: Int
+  ): IO[Unit] = IO.unit
+
+  case class MilliSearchResp(
+      hits: List[Json],
+      estimatedTotalHits: Int,
+      processingTimeMs: Int
+  )
+
+  case class MeiliStats(numberOfDocuments: Int)
+  override def waitForIndexCounts(expected: Map[String, Int]): IO[Unit] =
+    def go(indexName: String, expectedSize: Int): IO[Unit] =
+      for {
+        res <- simpleRequest[MeiliStats](
+          "waiting for indexing",
+          quickRequest.get(msUri.withPath("indexes", indexName, "stats"))
+        
+        )
+        _ <-
+          if (res.numberOfDocuments >= expectedSize) IO.unit
+          else IO.delay(100.milli) *> go(indexName, expectedSize)
+      } yield ()
+
+    expected.toList
+      .map { case (indexName, expectedSize) => go(indexName, expectedSize) }
+      .sequence
+      .void
+
+  override def search(indexName: String, query: Json): IO[SearchResponse] =
+    val reqUrl =
+      quickRequest
+        .post(msUri.withPath("indexes", indexName, "search"))
+        .body(query)
+
+    val req = reqUrl.body(query)
+
+    for 
+      resp <- simpleRequest[MilliSearchResp](
+        "searching",
+        req
+      )
+      hits = resp.hits.map(h => SearchHit("", 1.0, Some(h), None, None))
+    yield SearchResponse(resp.processingTimeMs, SearchHits(SearchHitsTotal(resp.estimatedTotalHits), hits), None)
+
+  override def indexDocumentsBulk(
+      docs: List[ElasticDoc],
+      maxBatchSize: Int
+  ): IO[Unit] =
+    docs
+      .groupBy(_.index)
+      .iterator
+      .map { case (index, idocs) =>
+        val reqUrl = msUri.withPath("indexes", index, "documents")
+        val req = quickRequest.post(reqUrl).body(docs.map(_.doc).asJson)
+
+        simpleRequest[Json](s"indexing docs for ${index}", req).void
+      }
+      .toList
+      .sequence
+      .void

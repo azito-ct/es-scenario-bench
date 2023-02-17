@@ -53,10 +53,12 @@ object StandalonePriceModel:
         yield res
       else IO.pure(acc)
 
-    for
-      n <- r.nextIntBounded(set.size)
-      res <- go(set.toVector, n, Set())
-    yield res
+    if (set.isEmpty) IO(Set.empty)
+    else
+      for
+        n <- r.nextIntBounded(set.size)
+        res <- go(set.toVector, n, Set())
+      yield res
 
 case class PriceDescriptor(
     id: String,
@@ -85,9 +87,13 @@ object PriceSelector:
   def random(using r: Random[IO]): IO[Set[PriceSelector]] =
     for
       currN <- r.betweenInt(1, StandalonePriceModel.currencies.size)
-      currs <- StandalonePriceModel.randomSubset(StandalonePriceModel.currenciesSet)
+      currs <- StandalonePriceModel.randomSubset(
+        StandalonePriceModel.currenciesSet
+      )
       countryN <- r.nextIntBounded(StandalonePriceModel.countries.size)
-      countries <- StandalonePriceModel.randomSubset(StandalonePriceModel.countriesSet)
+      countries <- StandalonePriceModel.randomSubset(
+        StandalonePriceModel.countriesSet
+      )
       channelNr <- r.nextIntBounded(StandalonePriceModel.maxChannels)
       channels = 0
         .to(channelNr)
@@ -115,7 +121,9 @@ object ProductVariant:
     for
       sku <- r.nextPrintableChar.replicateA(16)
       name <- r.nextPrintableChar.replicateA(10)
-      filterField <- r.nextIntBounded(StandalonePriceModel.maxVariantsFilterField)
+      filterField <- r.nextIntBounded(
+        StandalonePriceModel.maxVariantsFilterField
+      )
       priceSelectors <- PriceSelector.random
       prices <- PriceDescriptor.random.replicateA(priceSelectors.size)
       priceMap = priceSelectors.zip(prices).toMap
@@ -147,14 +155,20 @@ case class ProductQuery(
 object ProductQuery:
   def simple(using r: Random[IO]): IO[ProductQuery] =
     for
-      types <- StandalonePriceModel.randomSubset(StandalonePriceModel.productTypes)
+      types <- StandalonePriceModel.randomSubset(
+        StandalonePriceModel.productTypes
+      )
       currencyIdx <- r.nextIntBounded(StandalonePriceModel.currencies.size)
       currency = StandalonePriceModel.currencies(currencyIdx)
       countryIdx <- r.nextIntBounded(StandalonePriceModel.countries.size)
       country = StandalonePriceModel.countries(countryIdx)
       channelIdx <- r.nextIntBounded(StandalonePriceModel.maxChannels)
-      channel_ = Option.when(channelIdx > 0)(StandalonePriceModel.channel(channelIdx))
-      variantFilterField <- r.nextIntBounded(StandalonePriceModel.maxVariantsFilterField)
+      channel_ = Option.when(channelIdx > 0)(
+        StandalonePriceModel.channel(channelIdx)
+      )
+      variantFilterField <- r.nextIntBounded(
+        StandalonePriceModel.maxVariantsFilterField
+      )
     yield ProductQuery(
       productType = types,
       variantFilterField = variantFilterField,
